@@ -2,6 +2,9 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(StoreManager.self) private var store
+
+    @State private var showPaywall = false
 
     var body: some View {
         NavigationStack {
@@ -11,34 +14,42 @@ struct SettingsView: View {
                     HStack {
                         Label("Current Plan", systemImage: "sparkles")
                         Spacer()
-                        Text("Free")
+                        Text(store.isPro ? "Pro" : "Free")
                             .foregroundStyle(.secondary)
                     }
                     HStack {
                         Label("Daily Limit", systemImage: "clock")
                         Spacer()
-                        Text("3 briefs / day")
+                        Text(store.isPro ? "Unlimited" : "3 briefs / day")
                             .foregroundStyle(.secondary)
                     }
                 } header: {
                     Text("Plan")
                 } footer: {
-                    Text("Upgrade to Pro for unlimited briefs and offline PDF history.")
+                    if !store.isPro {
+                        Text("Upgrade to Pro for unlimited briefs and offline PDF history.")
+                    }
                 }
 
                 // ── Upgrade CTA ───────────────────────────────────────────────
-                Section {
-                    Button {
-                        // StoreKit paywall — hooked up in a future sprint
-                    } label: {
-                        HStack {
-                            Image(systemName: "crown.fill")
-                                .foregroundStyle(.yellow)
-                            Text("Upgrade to Pro — $4.99 / month")
-                                .fontWeight(.semibold)
+                if !store.isPro {
+                    Section {
+                        Button {
+                            showPaywall = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "crown.fill")
+                                    .foregroundStyle(.yellow)
+                                Text("Upgrade to Pro — \(store.proPriceDisplay) / month")
+                                    .fontWeight(.semibold)
+                            }
+                        }
+                        .tint(Color.accent)
+
+                        Button("Restore Purchases") {
+                            Task { await store.restorePurchases() }
                         }
                     }
-                    .tint(Color.accent)
                 }
 
                 // ── About ─────────────────────────────────────────────────────
@@ -56,9 +67,9 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     Link("Privacy Policy",
-                         destination: URL(string: "https://example.com/privacy")!)
+                         destination: URL(string: "https://techbrief-backend.vercel.app/privacy")!)
                     Link("Terms of Service",
-                         destination: URL(string: "https://example.com/terms")!)
+                         destination: URL(string: "https://techbrief-backend.vercel.app/terms")!)
                 }
             }
             .navigationTitle("Settings")
@@ -69,8 +80,11 @@ struct SettingsView: View {
                         .fontWeight(.semibold)
                 }
             }
+            .sheet(isPresented: $showPaywall) {
+                PaywallView()
+            }
         }
     }
 }
 
-#Preview { SettingsView() }
+#Preview { SettingsView().environment(StoreManager()) }

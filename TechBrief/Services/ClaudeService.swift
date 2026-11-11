@@ -64,12 +64,15 @@ class ClaudeService {
     // ── Public API ─────────────────────────────────────────────────────────────
 
     /// Generate a brief. Throws `TechBriefError.freeLimitReached` when quota exhausted.
-    func generateBrief(for topic: String) async throws -> Brief {
+    /// `isPro` should reflect the current StoreKit entitlement (`StoreManager.isPro`) so the
+    /// backend can bypass the free daily limit for subscribers.
+    func generateBrief(for topic: String, isPro: Bool = false) async throws -> Brief {
         let url = URL(string: "\(Self.backendBaseURL)/api/generate")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(Self.deviceId, forHTTPHeaderField: "x-device-id")
+        request.setValue(isPro ? "true" : "false", forHTTPHeaderField: "x-is-pro")
         request.httpBody = try JSONEncoder().encode(["topic": topic])
 
         do {
@@ -100,10 +103,11 @@ class ClaudeService {
     }
 
     /// Refresh usage counter — call on app launch and SearchView appear.
-    func fetchUsage() async {
+    func fetchUsage(isPro: Bool = false) async {
         guard let url = URL(string: "\(Self.backendBaseURL)/api/usage") else { return }
         var request = URLRequest(url: url)
         request.setValue(Self.deviceId, forHTTPHeaderField: "x-device-id")
+        request.setValue(isPro ? "true" : "false", forHTTPHeaderField: "x-is-pro")
         if let (data, _) = try? await URLSession.shared.data(for: request),
            let decoded = try? JSONDecoder().decode(UsageInfo.self, from: data) {
             self.usage = decoded

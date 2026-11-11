@@ -15,14 +15,14 @@ final class SearchViewModel {
 
     let service = ClaudeService()
 
-    func generate(topic: String) async {
+    func generate(topic: String, isPro: Bool) async {
         guard !topic.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         state = .loading
         errorMessage = ""
         brief = nil
 
         do {
-            let result = try await service.generateBrief(for: topic)
+            let result = try await service.generateBrief(for: topic, isPro: isPro)
             brief = result
             state = .done
         } catch TechBriefError.freeLimitReached {
@@ -34,8 +34,8 @@ final class SearchViewModel {
         }
     }
 
-    func refreshUsage() async {
-        await service.fetchUsage()
+    func refreshUsage(isPro: Bool) async {
+        await service.fetchUsage(isPro: isPro)
     }
 }
 
@@ -44,6 +44,7 @@ final class SearchViewModel {
 struct SearchView: View {
     @State private var vm = SearchViewModel()
     @State private var showSettings = false
+    @Environment(StoreManager.self) private var store
 
     private let examples = [
         "Kubernetes", "TypeScript", "GraphQL",
@@ -89,14 +90,20 @@ struct SearchView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
-        .sheet(isPresented: $vm.showPaywall) {
+        .sheet(isPresented: Binding(
+            get: { vm.showPaywall && !store.isPro },
+            set: { vm.showPaywall = $0 }
+        )) {
             PaywallView()
         }
         .navigationDestination(item: $vm.brief) { brief in
             BriefDetailView(brief: brief)
         }
         .task {
-            await vm.refreshUsage()
+            await vm.refreshUsage(isPro: store.isPro)
+        }
+        .onChange(of: store.isPro) { _, isPro in
+            Task { await vm.refreshUsage(isPro: isPro) }
         }
     }
 
@@ -132,7 +139,7 @@ struct SearchView: View {
             TextField("e.g. Kubernetes, TypeScript…", text: $vm.topic)
                 .font(.body)
                 .submitLabel(.search)
-                .onSubmit { Task { await vm.generate(topic: vm.topic) } }
+                .onSubmit { Task { await vm.generate(topic: vm.topic, isPro: store.isPro) } }
                 .disabled(vm.state == .loading)
             if !vm.topic.isEmpty {
                 Button {
@@ -153,7 +160,25 @@ struct SearchView: View {
     // ── Usage banner ──────────────────────────────────────────────────────
     @ViewBuilder
     private var usageBanner: some View {
-        if let usage = vm.service.usage {
+        if store.isPro {
+            HStack(spacing: 6) {
+                Image(systemName: "crown.fill")
+                    .font(.caption)
+                    .foregroundStyle(.yellow)
+                Text("Unlimited briefs with Pro")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: .black.opacity(0.04), radius: 4, y: 1)
+            )
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        } else if let usage = vm.service.usage {
             HStack(spacing: 6) {
                 // pip dots
                 HStack(spacing: 4) {
@@ -201,7 +226,7 @@ struct SearchView: View {
                 ForEach(examples, id: \.self) { example in
                     Button {
                         vm.topic = example
-                        Task { await vm.generate(topic: example) }
+                        Task { await vm.generate(topic: example, isPro: store.isPro) }
                     } label: {
                         Text(example)
                             .font(.subheadline.weight(.medium))
@@ -321,4 +346,5 @@ struct HowItWorksRow: View {
 
 #Preview {
     NavigationStack { SearchView() }
+        .environment(StoreManager())
 }

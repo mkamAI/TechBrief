@@ -2,6 +2,9 @@ import SwiftUI
 
 struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(StoreManager.self) private var store
+
+    @State private var showErrorAlert = false
 
     private let perks: [(String, String, Color)] = [
         ("infinity",          "Unlimited briefs every day",          .blue),
@@ -75,15 +78,28 @@ struct PaywallView: View {
                     // ── CTA ───────────────────────────────────────────────
                     VStack(spacing: 12) {
                         Button {
-                            // StoreKit purchase — wire up in a future sprint
+                            Task { await startPurchase() }
                         } label: {
-                            Text("Start Pro — $4.99 / month")
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                                .background(Color.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            ZStack {
+                                Text("Start Pro — \(store.proPriceDisplay) / month")
+                                    .font(.headline)
+                                    .opacity(store.isPurchasing ? 0 : 1)
+                                if store.isPurchasing {
+                                    ProgressView().tint(.white)
+                                }
+                            }
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
+                        .disabled(store.isPurchasing || store.proProduct == nil)
+
+                        Button("Restore Purchases") {
+                            Task { await store.restorePurchases() }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                         Button("Maybe later") { dismiss() }
                             .font(.subheadline)
@@ -99,7 +115,31 @@ struct PaywallView: View {
             }
         }
         .background(Color(.systemGroupedBackground))
+        .onChange(of: store.isPro) { _, isPro in
+            if isPro { dismiss() }
+        }
+        .onChange(of: store.errorMessage) { _, message in
+            showErrorAlert = message != nil
+        }
+        .alert("Something went wrong", isPresented: $showErrorAlert) {
+            Button("OK") { store.errorMessage = nil }
+        } message: {
+            Text(store.errorMessage ?? "")
+        }
+    }
+
+    private func startPurchase() async {
+        let outcome = await store.purchasePro()
+        switch outcome {
+        case .success:
+            dismiss()
+        case .pending:
+            // Awaiting approval (e.g. Ask to Buy) — nothing more to do here.
+            break
+        case .userCancelled, .failed:
+            break
+        }
     }
 }
 
-#Preview { PaywallView() }
+#Preview { PaywallView().environment(StoreManager()) }
